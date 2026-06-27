@@ -1,7 +1,9 @@
 from fastapi import Body, FastAPI
 
 app = FastAPI()
-
+@app.get("/")
+async def root():
+    return {"message": "Welcome to my Book API! Go to /docs to see the full interface."}
 
 BOOKS = [
     {'title': 'Title One', 'author': 'Author One', 'category': 'science'},

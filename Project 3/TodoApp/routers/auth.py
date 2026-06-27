@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from starlette import status
 from database import SessionLocal
 from models import Users
-from passlib.context import CryptContext
+import bcrypt
+# Puraani CryptContext wali line ko poori tarah hata dein (delete it)t
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError
 
@@ -18,7 +19,13 @@ router = APIRouter(
 SECRET_KEY = '197b2c37c391bed93fe80344fe73b806947a65e36206e05a1a23c2fa12702fe3'
 ALGORITHM = 'HS256'
 
-bcrypt_context = CryptContext(schemes=['bcrypt'], deprecated='auto')
+import logging
+# Passlib ke irritating version warning messages ko silent karne ke liye
+logging.getLogger("passlib").setLevel(logging.ERROR)
+
+
+
+
 oauth2_bearer = OAuth2PasswordBearer(tokenUrl='auth/token')
 
 
@@ -51,10 +58,13 @@ def authenticate_user(username: str, password: str, db):
     user = db.query(Users).filter(Users.username == username).first()
     if not user:
         return False
-    if not bcrypt_context.verify(password, user.hashed_password):
+        
+    # 🔐 Naya secure tarika bina passlib ke:
+    # 'password' aapka plain text hai aur 'user.hashed_password' database se aaya hai
+    if not bcrypt.checkpw(password.encode('utf-8'), user.hashed_password.encode('utf-8')):
         return False
+        
     return user
-
 
 def create_access_token(username: str, user_id: int, role: str, expires_delta: timedelta):
     encode = {'sub': username, 'id': user_id, 'role': role}
@@ -81,13 +91,19 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_bearer)]):
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def create_user(db: db_dependency,
                       create_user_request: CreateUserRequest):
+    # 1. Pure Python 3.12 compatible modern bcrypt hash snippet
+    password_bytes = create_user_request.password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password_bytes, salt).decode('utf-8')
+    
+    # 2. Database model mein naya hashed_password pass karein
     create_user_model = Users(
         email=create_user_request.email,
         username=create_user_request.username,
         first_name=create_user_request.first_name,
         last_name=create_user_request.last_name,
         role=create_user_request.role,
-        hashed_password=bcrypt_context.hash(create_user_request.password),
+        hashed_password=hashed_password,  # 🔥 YAHAN CHANGE KIYA HAI! (bcrypt_context hata diya)
         is_active=True
     )
 
